@@ -11,7 +11,7 @@
     "server"
   ],
   "scripts": {
-    "build": "yarn workspaces build",
+    "build": "yarn workspaces run build",
     "server": "yarn workspace server start",
     "chat": "yarn workspace client chat",
     "chatMalicious": "yarn workspace client chatMalicious"
