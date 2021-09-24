@@ -2,7 +2,13 @@ import * as path from "path";
 import * as fs from "fs";
 
 import { RLN, IProof } from "semaphore-lib";
-import { Message, MessageVerificationStatus, ReceivedMessages } from "./types";
+import {
+  Message,
+  MessageVerificationStatus,
+  ReceivedMessages,
+  UserRegistrationStatus,
+  UserRegisterResponse,
+} from "./types";
 
 const VERIFIER_KEY_PATH = path.join("./circuitFiles", "verification_key.json");
 const verifierKey = JSON.parse(fs.readFileSync(VERIFIER_KEY_PATH, "utf-8"));
@@ -27,16 +33,25 @@ const init = () => {
   tree = RLN.createTree(depth, zeroValue, leavesPerNode);
 };
 
-const register = (identityCommitment: BigInt): number => {
-  if (tree.leaves.includes(identityCommitment))
-    throw new Error("User already registered");
-  if (bannedUsers.includes(identityCommitment))
-    throw new Error("User is banned");
+const register = (identityCommitment: BigInt): UserRegisterResponse => {
+  const response: UserRegisterResponse = {
+    status: UserRegistrationStatus.VALID,
+  };
 
-  tree.insert(identityCommitment);
-  const leafIndex = tree.nextIndex - 1;
-  identityToLeafIndexMapping[identityCommitment.toString()] = leafIndex;
-  return leafIndex;
+  if (tree.leaves.includes(identityCommitment)) {
+    response.status = UserRegistrationStatus.ALREADY_REGISTERED;
+  } else if (bannedUsers.includes(identityCommitment)) {
+    response.status = UserRegistrationStatus.BANNED;
+  } else {
+    tree.insert(identityCommitment);
+
+    const leafIndex = tree.nextIndex - 1;
+    identityToLeafIndexMapping[identityCommitment.toString()] = leafIndex;
+
+    response.leafIndex = leafIndex;
+  }
+
+  return response;
 };
 
 const removeUser = (message: Message) => {
@@ -50,11 +65,12 @@ const removeUser = (message: Message) => {
 
   const pKey = RLN.retrievePrivateKey(xSharePrev, xShare, ySharePrev, yShare);
 
-  const identityCommitment = RLN.genIdentityCommitment(
-    pKey as Buffer
-  ).toString(); // generate identity commitment from private key
+  const identityCommitment = RLN.genIdentityCommitment(pKey as Buffer); // generate identity commitment from private key
 
-  const leafIndex = identityToLeafIndexMapping[identityCommitment];
+  const leafIndex = identityToLeafIndexMapping[identityCommitment.toString()];
+
+  // mark the user as banned
+  bannedUsers.push(identityCommitment);
 
   // remove the user from the tree
   tree.update(leafIndex, BigInt(0));
@@ -84,7 +100,7 @@ const isDuplicate = (message: Message): boolean => {
 
   return (
     userMessage &&
-    userMessage.yShare === RLN.genSignalHash(message.content).toString() &&
+    userMessage.xShare === RLN.genSignalHash(message.content).toString() &&
     userMessage.yShare === message.yShare
   );
 };
@@ -97,7 +113,6 @@ const isSpam = (message: Message): boolean => {
    */
 
   const userMessage = receivedMessages[message.epoch]?.[message.nullifier];
-
   return userMessage && true;
 };
 
@@ -120,7 +135,7 @@ const verifyMessage = async (
   const status = await RLN.verifyProof(verifierKey, proof);
 
   if (!status) {
-    return MessageVerificationStatus.VALID;
+    return MessageVerificationStatus.INVALID;
   }
 
   if (isSpam(message)) {

@@ -12,7 +12,13 @@ enum MessageVerificationStatus {
   DUPLICATE = "duplicate",
   SPAM = "spam",
   INVALID = "invalid", // the proof is invalid
-  VALID = "valid", // message is not duplicate, the proof is valid and it is not a spam
+  VALID = "valid" // message is not duplicate, the proof is valid and it is not a spam
+}
+
+enum UserRegistrationStatus {
+  ALREADY_REGISTERED = "alreadyRegistered", // user is already registered
+  BANNED = "banned",
+  VALID = "valid"
 }
 
 type UserNullifier = BigInt | string;
@@ -38,10 +44,18 @@ interface Message {
   yShare: string; // the xShare is the hash of the content, so we don't need to send that
 }
 
+interface UserRegisterResponse {
+  status: UserRegistrationStatus;
+  leafIndex?: number;
+  witness?: object;
+}
+
 export {
   UserNullifier,
   Message,
   EventType,
   ReceivedMessages,
   MessageVerificationStatus,
+  UserRegistrationStatus,
+  UserRegisterResponse
 };

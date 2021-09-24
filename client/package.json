@@ -2,7 +2,7 @@
   "name": "client",
   "version": "1.0.0",
   "description": "Anonymous instant chat app client",
-  "main": "dist/src/main.js",
+  "main": "dist/src/chat.js",
   "author": "Blagoj Dimovski",
   "license": "MIT",
   "dependencies": {
@@ -19,6 +19,8 @@
     "build": "tsc",
     "prestart": "npm run build",
     "start": "node .",
+    "chat": "node .",
+    "chatMalicious": "node dist/src/chatMalicious.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   }
 }

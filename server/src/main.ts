@@ -1,7 +1,13 @@
 import express from "express";
 import http from "http";
 import { Server, Socket } from "socket.io";
-import { EventType, Message, MessageVerificationStatus } from "./types";
+import {
+  EventType,
+  Message,
+  MessageVerificationStatus,
+  UserRegistrationStatus,
+  UserRegisterResponse,
+} from "./types";
 import {
   init,
   register,
@@ -20,16 +26,16 @@ const io = new Server(server);
 // init RLN
 init();
 
-const onError = (callback, error) => {
-  callback({
-    status: "fail",
-    reason: error.statusText,
-  });
-};
-
 app.get("/", (req, res) => {
   res.send("<h1>Hello world</h1>");
 });
+
+const onError = (callback, error) => {
+  callback({
+    status: "error",
+    reason: error.statusText,
+  });
+};
 
 io.on("connection", (socket: Socket) => {
   socket.emit("connected");
@@ -37,16 +43,19 @@ io.on("connection", (socket: Socket) => {
   socket.on(EventType.REGISTER, (identityCommitment: string, callback) => {
     try {
       const identity = BigInt(identityCommitment);
-      const leafIndex = register(identity);
-      const witness = getWitness(leafIndex);
 
-      socket.broadcast.emit(EventType.USER_REGISTERED);
+      const response: UserRegisterResponse = register(identity);
 
-      callback({
-        status: "success",
-        leafIndex,
-        witness: serializeWitness(witness),
-      });
+      if (response.status !== UserRegistrationStatus.VALID) {
+        callback({ status: response.status });
+      } else {
+        response.witness = getWitness(response.leafIndex as number);
+        response.witness = serializeWitness(response.witness);
+
+        socket.broadcast.emit(EventType.USER_REGISTERED);
+
+        callback(response);
+      }
     } catch (e: any) {
       onError(callback, e);
     }
@@ -70,30 +79,16 @@ io.on("connection", (socket: Socket) => {
         message
       );
 
-      if (verificationStatus === MessageVerificationStatus.INVALID) {
-        callback({
-          status: "fail",
-          reason: "Invalid proof",
-        });
-      } else if (verificationStatus === MessageVerificationStatus.DUPLICATE) {
-        callback({
-          status: "fail",
-          reason: "Invalid message",
-        });
-      } else if (verificationStatus === MessageVerificationStatus.SPAM) {
-        removeUser(message);
-        io.emit(EventType.USER_SLASHED);
-        callback({
-          status: "fail",
-          reason: "You've been slashed",
-        });
-      } else {
+      callback({
+        status: verificationStatus,
+      });
+
+      if (verificationStatus === MessageVerificationStatus.VALID) {
         registerValidMessage(message);
         socket.broadcast.emit(EventType.RECEIVE_MESSAGE, message.content);
-
-        callback({
-          status: "success",
-        });
+      } else if (verificationStatus === MessageVerificationStatus.SPAM) {
+        removeUser(message);
+        socket.broadcast.emit(EventType.USER_SLASHED);
       }
     } catch (e: any) {
       onError(callback, e);
@@ -106,5 +101,5 @@ io.on("connection", (socket: Socket) => {
 });
 
 server.listen(3000, () => {
-  console.log("listening on *:3000");
+  console.log("Server running on port: 3000");
 });
