@@ -12,7 +12,8 @@ import {deserializeWitness} from "./utils"
 
 RLN.setHasher('poseidon');
 const identity: Identity = RLN.genIdentity();
-const identityCommitment: BigInt = RLN.genIdentityCommitment(identity.keypair.privKey);
+const identitySecret: bigint = RLN.calculateIdentitySecret(identity);
+const identityCommitment: BigInt = RLN.genIdentityCommitment(identitySecret);
 
 const PROVER_KEY_PATH: string = path.join('./circuitFiles', 'rln_final.zkey');
 const CIRCUIT_PATH: string = path.join('./circuitFiles', 'rln.wasm');
@@ -21,6 +22,7 @@ const state = {
     "connected": false,
     "index": 0,
     "witness": {},
+    "rlnIdentifier": BigInt(0),
     "isRegistered": false
 }
 
@@ -66,20 +68,21 @@ socket.on(EventType.RECEIVE_MESSAGE, (message) => {
 const sendMessage = async (content: string, epoch: string = Date.now().toString()): Promise<MessageVerificationStatus> => {
 
     epoch = RLN.genExternalNullifier(epoch);
-    const fullProof = await RLN.genProofFromBuiltTree(identity.keypair.privKey, state.witness, epoch, content, CIRCUIT_PATH, PROVER_KEY_PATH)
+    const fullProof = await RLN.genProofFromBuiltTree(identitySecret, state.witness, epoch, content, state.rlnIdentifier, CIRCUIT_PATH, PROVER_KEY_PATH)
 
     const xShare: bigint = RLN.genSignalHash(content);
 
-    const a1 = RLN.calculateA1(identity.keypair.privKey, epoch);
-    const y = RLN.calculateY(a1, identity.keypair.privKey, xShare);
-    const nullifier = RLN.genNullifier(a1);
+    const a1 = RLN.calculateA1(identitySecret, epoch, state.rlnIdentifier);
+    const y = RLN.calculateY(a1, identitySecret, xShare);
+    const nullifier = RLN.genNullifier(a1, state.rlnIdentifier);
 
     const message: Message = {
         proof: fullProof.proof,
         nullifier: nullifier.toString(),
         content,
         epoch,
-        yShare: y.toString()
+        yShare: y.toString(),
+        rlnIdentifier: state.rlnIdentifier.toString()
     }
     const res: MessageVerificationStatus = await new Promise((resolve, reject) => {
 
@@ -108,6 +111,7 @@ const register = async (): Promise<UserRegisterResponse> => {
                 if(response.status === UserRegistrationStatus.VALID) {
                     state.isRegistered = true;
                     state.index = response.leafIndex;
+                    state.rlnIdentifier = BigInt(response.rlnIdentifier);
                     state.witness = deserializeWitness(response.witness);
                 }
                 resolve(response);

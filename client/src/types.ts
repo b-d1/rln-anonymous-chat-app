@@ -1,7 +1,7 @@
 enum EventType {
   USER_REGISTERED = "userRegistered", // event emitted by the server to all of the clients when new user registers successfully
   USER_SLASHED = "userSlashed", // event emitted by the server to the clients when user is slashed
-  REGISTER = "register", // event emitted by the client when they want to register
+  REGISTER = "register", // event emitted by the clients to the server when they want to register
   MESSAGE = "message", // event emitted by the clients to the server when sending a new message
   RECEIVE_MESSAGE = "receiveMessage", // event emitted by the server to the clients to broadcast an valid client message
   GET_WITNESS = "getWitness", // event emitted by the clients when they need to obtain a new witness (when new user is added or user is slashed)
@@ -9,16 +9,16 @@ enum EventType {
 }
 
 enum MessageVerificationStatus {
-  DUPLICATE = "duplicate",
-  SPAM = "spam",
+  DUPLICATE = "duplicate", // the message is duplicate, it should be ignored and not further broadcasted
+  SPAM = "spam", // the message is considered as spam, the user should be slashed
   INVALID = "invalid", // the proof is invalid
-  VALID = "valid" // message is not duplicate, the proof is valid and it is not a spam
+  VALID = "valid", // message is not duplicate, the proof is valid and it is not considered as spam
 }
 
 enum UserRegistrationStatus {
   ALREADY_REGISTERED = "alreadyRegistered", // user is already registered
-  BANNED = "banned",
-  VALID = "valid"
+  BANNED = "banned", // user is banned and cannot register
+  VALID = "valid", // user registration is valid
 }
 
 type UserNullifier = BigInt | string;
@@ -41,13 +41,16 @@ interface Message {
   nullifier: string;
   content: string;
   epoch: string;
+  rlnIdentifier: string;
   yShare: string; // the xShare is the hash of the content, so we don't need to send that
 }
 
+// Upon successfull user registration we will send the registered user the witness, the leafIndex, and the app's specific rlnIdentifier
 interface UserRegisterResponse {
   status: UserRegistrationStatus;
   leafIndex?: number;
   witness?: object;
+  rlnIdentifier?: string;
 }
 
 export {
@@ -57,5 +60,5 @@ export {
   ReceivedMessages,
   MessageVerificationStatus,
   UserRegistrationStatus,
-  UserRegisterResponse
+  UserRegisterResponse,
 };

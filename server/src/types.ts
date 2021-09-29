@@ -18,7 +18,7 @@ enum MessageVerificationStatus {
 enum UserRegistrationStatus {
   ALREADY_REGISTERED = "alreadyRegistered", // user is already registered
   BANNED = "banned", // user is banned and cannot register
-  VALID = "valid" // user registration is valid
+  VALID = "valid", // user registration is valid
 }
 
 type UserNullifier = BigInt | string;
@@ -41,14 +41,16 @@ interface Message {
   nullifier: string;
   content: string;
   epoch: string;
+  rlnIdentifier: string;
   yShare: string; // the xShare is the hash of the content, so we don't need to send that
 }
 
-// Upon successfull user registration we will send the registered user the witness and the leafIndex, to save on calls
+// Upon successfull user registration we will send the registered user the witness, the leafIndex, and the app's specific rlnIdentifier
 interface UserRegisterResponse {
   status: UserRegistrationStatus;
   leafIndex?: number;
   witness?: object;
+  rlnIdentifier?: string;
 }
 
 export {
@@ -58,5 +60,5 @@ export {
   ReceivedMessages,
   MessageVerificationStatus,
   UserRegistrationStatus,
-  UserRegisterResponse
+  UserRegisterResponse,
 };

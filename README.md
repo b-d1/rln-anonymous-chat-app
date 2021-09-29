@@ -1,7 +1,7 @@
 # Anonymous proof of concept application for instant chat, created using RLN (Rate limiting nullifier)
 
 ### Description
-Proof-of-concept application created for the [ETHOnline hackathon](https://online.ethglobal.com/). The project is simple messaging protocol that uses the [RLN](https://medium.com/privacy-scaling-explorations/rate-limiting-nullifier-a-spam-protection-mechanism-for-anonymous-environments-bbe4006a57d) construct via [semaphore-lib](https://github.com/akinovak/semaphore-lib). The main goal is to show how to integrate RLN easily, and how to enable anonymity and spam protection on app level. The high barrier for entry/staking component is not implemented in this application, thus slashing is only applied by removing the member from the group. If we had staking, the slashing would include revoking the user's stake once his private key is revealed.
+Proof-of-concept application created for the [ETHOnline hackathon](https://online.ethglobal.com/). The project is simple messaging protocol that uses the [RLN](https://medium.com/privacy-scaling-explorations/rate-limiting-nullifier-a-spam-protection-mechanism-for-anonymous-environments-bbe4006a57d) construct via [semaphore-lib](https://github.com/akinovak/semaphore-lib). The main goal is to show how to integrate RLN easily, and how to enable anonymity and spam protection on app level. The high barrier for entry/staking component is not implemented in this application, thus slashing is only applied by removing the member from the group. If we had staking, the slashing would include revoking the user's stake once their identity secret is revealed.
 
 The app features client-server architecture, and is completely offchain.
 
@@ -92,6 +92,7 @@ const register = (identityCommitment: BigInt): UserRegisterResponse => {
     identityToLeafIndexMapping[identityCommitment.toString()] = leafIndex;
 
     response.leafIndex = leafIndex;
+    response.rlnIdentifier = rlnIdentifier.toString();
   }
 
   return response;
@@ -107,6 +108,7 @@ interface Message {
   nullifier: string; // the user's nullifier, according to the RLN protocol
   content: string; // unencrypted message content
   epoch: string; // enrypted epoch
+  rlnIdentifier: string; // the app specific RLN identifier, received on user registration
   yShare: string; // only the yShare needs to be sended, the xShare is the hash of the content, so we don't need to send that
 }
 ```
@@ -127,6 +129,7 @@ const verifyMessage = async (
       BigInt(message.nullifier),
       RLN.genSignalHash(message.content),
       message.epoch,
+      BigInt(message.rlnIdentifier),
     ],
   };
 
@@ -148,35 +151,37 @@ In order for the users to generate valid proofs, they need to have an up-to-date
 
 ```typescript
     const getWitness = (leafIndex: number) => {
-    return tree.genMerklePath(leafIndex);
+      return tree.genMerklePath(leafIndex);
     };
 ```
 
 #### The client
 
-In order to be able to use the chat app (sending messages, anyone can receive the messages), the clients need to create an identity and register to the application with the identity. User identity consists of public identity hash generated from their `privateKey`, called `identityCommitment`. The users perform the registration with the `identityCommitment`. 
+In order to be able to use the chat app (sending messages, anyone can receive the messages), the clients need to create an identity and register to the application with the identity. User identity consists of public identity hash generated from their `identitySecret`, called `identityCommitment`. The users perform the registration with the `identityCommitment`. 
 
 ```typescript
 
     const identity: Identity = RLN.genIdentity();
-    const identityCommitment: BigInt = RLN.genIdentityCommitment(identity.keypair.privKey);
+    const identitySecret: bigint = RLN.calculateIdentitySecret(identity);
+    const identityCommitment: BigInt = RLN.genIdentityCommitment(identitySecret);
 
     // Register to the chat app
     socket.emit(EventType.REGISTER, identityCommitment.toString(), async (response) => {
 
-            if(response.status === 'error') {
-                reject(response.reason)
-            } else {
+        if(response.status === 'error') {
+            reject(response.reason)
+        } else {
 
-                if(response.status === UserRegistrationStatus.VALID) {
-                    state.isRegistered = true;
-                    state.index = response.leafIndex;
-                    state.witness = deserializeWitness(response.witness);
-                }
-                resolve(response);
+            if(response.status === UserRegistrationStatus.VALID) {
+                state.isRegistered = true;
+                state.index = response.leafIndex;
+                state.rlnIdentifier = BigInt(response.rlnIdentifier);
+                state.witness = deserializeWitness(response.witness);
             }
+            resolve(response);
+        }
 
-        });
+    });
 
 ```
 
@@ -185,7 +190,8 @@ The inputs for proof generation are:
 -  the proof of their membership in the member tree (which is stored on the server)
 -  the epoch
 -  the message content (the signal) 
--  the user's private key used to generate the `identityCommitment` hash
+-  the rln identifier, an app specific identifier received upon user registration
+-  the user's `identitySecret` used to generate the `identityCommitment` hash
 
 
 The users can generate the proof and send a message in the following way:
@@ -195,20 +201,21 @@ The users can generate the proof and send a message in the following way:
 const sendMessage = async (content: string, epoch: string = Date.now().toString()): Promise<MessageVerificationStatus> => {
 
     epoch = RLN.genExternalNullifier(epoch);
-    const fullProof = await RLN.genProofFromBuiltTree(identity.keypair.privKey, state.witness, epoch, content, CIRCUIT_PATH, PROVER_KEY_PATH)
+    const fullProof = await RLN.genProofFromBuiltTree(identitySecret, state.witness, epoch, content, state.rlnIdentifier, CIRCUIT_PATH, PROVER_KEY_PATH)
 
     const xShare: bigint = RLN.genSignalHash(content);
 
-    const a1 = RLN.calculateA1(identity.keypair.privKey, epoch);
-    const y = RLN.calculateY(a1, identity.keypair.privKey, xShare);
-    const nullifier = RLN.genNullifier(a1);
+    const a1 = RLN.calculateA1(identitySecret, epoch, state.rlnIdentifier);
+    const y = RLN.calculateY(a1, identitySecret, xShare);
+    const nullifier = RLN.genNullifier(a1, state.rlnIdentifier);
 
     const message: Message = {
         proof: fullProof.proof,
         nullifier: nullifier.toString(),
         content,
         epoch,
-        yShare: y.toString()
+        yShare: y.toString(),
+        rlnIdentifier: state.rlnIdentifier.toString()
     }
     const res: MessageVerificationStatus = await new Promise((resolve, reject) => {
 

@@ -14,6 +14,8 @@ const VERIFIER_KEY_PATH = path.join("./circuitFiles", "verification_key.json");
 const verifierKey = JSON.parse(fs.readFileSync(VERIFIER_KEY_PATH, "utf-8"));
 
 let tree: any = null;
+// RLN app specific identifier
+let rlnIdentifier: BigInt = BigInt(0);
 
 // Array that keeps the identity commitment of banned users
 const bannedUsers: BigInt[] = [];
@@ -31,6 +33,7 @@ const init = () => {
 
   RLN.setHasher("poseidon");
   tree = RLN.createTree(depth, zeroValue, leavesPerNode);
+  rlnIdentifier = RLN.genIdentifier();
 };
 
 const register = (identityCommitment: BigInt): UserRegisterResponse => {
@@ -49,6 +52,7 @@ const register = (identityCommitment: BigInt): UserRegisterResponse => {
     identityToLeafIndexMapping[identityCommitment.toString()] = leafIndex;
 
     response.leafIndex = leafIndex;
+    response.rlnIdentifier = rlnIdentifier.toString();
   }
 
   return response;
@@ -65,7 +69,7 @@ const removeUser = (message: Message) => {
 
   const pKey = RLN.retrievePrivateKey(xSharePrev, xShare, ySharePrev, yShare);
 
-  const identityCommitment = RLN.genIdentityCommitment(pKey as Buffer); // generate identity commitment from private key
+  const identityCommitment = RLN.genIdentityCommitment(pKey); // generate identity commitment from private key
 
   const leafIndex = identityToLeafIndexMapping[identityCommitment.toString()];
 
@@ -129,6 +133,7 @@ const verifyMessage = async (
       BigInt(message.nullifier),
       RLN.genSignalHash(message.content),
       message.epoch,
+      BigInt(message.rlnIdentifier),
     ],
   };
 

@@ -31,7 +31,7 @@ const main = async () => {
 
         // The user is banned, cannot register
         registerResponse = await register();
-        console.log("Malicious Register (attempt3): ", response);
+        console.log("Malicious Register (attempt3): ", registerResponse.status);
 
 
         // Invalid, the user is banned
