@@ -6,8 +6,10 @@
   "author": "Blagoj Dimovski",
   "license": "MIT",
   "dependencies": {
-    "semaphore-lib": "git+https://github.com/akinovak/semaphore-lib.git#dev",
-    "socket.io-client": "^4.2.0"
+    "@libsem/identity": "^1.0.17",
+    "@libsem/protocols": "^1.0.21",
+    "socket.io-client": "^4.2.0",
+    "circomlibjs": "^0.0.8"
   },
   "devDependencies": {
     "@types/node": "^16.9.4",

@@ -1,19 +1,17 @@
 import { io, Socket } from "socket.io-client";
 import * as path from 'path';
-import * as fs from 'fs';
-import {
-    RLN,
-    Identity
-} from "semaphore-lib";
+import {ZkIdentity} from "@libsem/identity"
+import {genSignalHash, genExternalNullifier, Rln, FullProof} from "@libsem/protocols"
+import poseidonHash from "./hasher";
 
 import {EventType, Message, MessageVerificationStatus, UserRegisterResponse, UserRegistrationStatus} from "./types"
 
 import {deserializeWitness} from "./utils"
 
-RLN.setHasher('poseidon');
-const identity: Identity = RLN.genIdentity();
-const identitySecret: bigint = RLN.calculateIdentitySecret(identity);
-const identityCommitment: BigInt = RLN.genIdentityCommitment(identitySecret);
+const identity: ZkIdentity = new ZkIdentity();
+identity.genSecretFromIdentity();
+const secretHash: BigInt = poseidonHash(identity.getSecret());
+const identityCommitment: bigint = identity.genIdentityCommitment();
 
 const PROVER_KEY_PATH: string = path.join('./circuitFiles', 'rln_final.zkey');
 const CIRCUIT_PATH: string = path.join('./circuitFiles', 'rln.wasm');
@@ -67,14 +65,14 @@ socket.on(EventType.RECEIVE_MESSAGE, (message) => {
 
 const sendMessage = async (content: string, epoch: string = Date.now().toString()): Promise<MessageVerificationStatus> => {
 
-    epoch = RLN.genExternalNullifier(epoch);
-    const fullProof = await RLN.genProofFromBuiltTree(identitySecret, state.witness, epoch, content, state.rlnIdentifier, CIRCUIT_PATH, PROVER_KEY_PATH)
+    epoch = genExternalNullifier(epoch);
 
-    const xShare: bigint = RLN.genSignalHash(content);
+    const xShare: bigint = genSignalHash(content);
+    const [y, nullifier] = Rln.calculateOutput(secretHash, BigInt(epoch), state.rlnIdentifier, xShare)
 
-    const a1 = RLN.calculateA1(identitySecret, epoch, state.rlnIdentifier);
-    const y = RLN.calculateY(a1, identitySecret, xShare);
-    const nullifier = RLN.genNullifier(a1, state.rlnIdentifier);
+    const witness: FullProof = Rln.genWitness(secretHash, state.witness, epoch, content, state.rlnIdentifier)
+    const fullProof: FullProof = await Rln.genProof(witness, CIRCUIT_PATH, PROVER_KEY_PATH)
+
 
     const message: Message = {
         proof: fullProof.proof,

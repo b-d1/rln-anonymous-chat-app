@@ -1,7 +1,13 @@
 import * as path from "path";
 import * as fs from "fs";
 
-import { RLN, IProof } from "semaphore-lib";
+import { ZkIdentity } from "@libsem/identity";
+import {
+  genSignalHash,
+  genExternalNullifier,
+  Rln,
+  FullProof,
+} from "@libsem/protocols";
 import {
   Message,
   MessageVerificationStatus,
@@ -9,6 +15,8 @@ import {
   UserRegistrationStatus,
   UserRegisterResponse,
 } from "./types";
+import poseidonHash from "./hasher";
+const Tree = require("incrementalquintree/build/IncrementalQuinTree");
 
 const VERIFIER_KEY_PATH = path.join("./circuitFiles", "verification_key.json");
 const verifierKey = JSON.parse(fs.readFileSync(VERIFIER_KEY_PATH, "utf-8"));
@@ -31,9 +39,13 @@ const init = () => {
   const leavesPerNode = 2;
   const zeroValue = 0;
 
-  RLN.setHasher("poseidon");
-  tree = RLN.createTree(depth, zeroValue, leavesPerNode);
-  rlnIdentifier = RLN.genIdentifier();
+  tree = new Tree.IncrementalQuinTree(
+    depth,
+    zeroValue,
+    leavesPerNode,
+    poseidonHash
+  );
+  rlnIdentifier = Rln.genIdentifier();
 };
 
 const register = (identityCommitment: BigInt): UserRegisterResponse => {
@@ -61,15 +73,15 @@ const register = (identityCommitment: BigInt): UserRegisterResponse => {
 const removeUser = (message: Message) => {
   const nullifierString: string = message.nullifier.toString();
   const prevPkeyShares = receivedMessages[message.epoch][nullifierString];
-  const xShare = RLN.genSignalHash(message.content);
+  const xShare = genSignalHash(message.content);
   const yShare = BigInt(message.yShare);
 
   const xSharePrev = BigInt(prevPkeyShares.xShare);
   const ySharePrev = BigInt(prevPkeyShares.yShare);
 
-  const pKey = RLN.retrievePrivateKey(xSharePrev, xShare, ySharePrev, yShare);
+  const pKey = Rln.retrieveSecret(xSharePrev, xShare, ySharePrev, yShare);
 
-  const identityCommitment = RLN.genIdentityCommitment(pKey); // generate identity commitment from private key
+  const identityCommitment = poseidonHash([pKey]); // generate identity commitment from private key
 
   const leafIndex = identityToLeafIndexMapping[identityCommitment.toString()];
 
@@ -86,7 +98,7 @@ const registerValidMessage = (message: Message) => {
     receivedMessages[message.epoch] = {};
   }
 
-  const xShare = RLN.genSignalHash(message.content).toString();
+  const xShare = genSignalHash(message.content).toString();
   const yShare = message.yShare;
 
   receivedMessages[message.epoch][message.nullifier] = {
@@ -104,7 +116,7 @@ const isDuplicate = (message: Message): boolean => {
 
   return (
     userMessage &&
-    userMessage.xShare === RLN.genSignalHash(message.content).toString() &&
+    userMessage.xShare === genSignalHash(message.content).toString() &&
     userMessage.yShare === message.yShare
   );
 };
@@ -125,19 +137,19 @@ const verifyMessage = async (
 ): Promise<MessageVerificationStatus> => {
   if (isDuplicate(message)) return MessageVerificationStatus.DUPLICATE;
 
-  const proof: IProof = {
+  const proof: FullProof = {
     proof: message.proof,
     publicSignals: [
       BigInt(message.yShare),
       tree.root,
       BigInt(message.nullifier),
-      RLN.genSignalHash(message.content),
+      genSignalHash(message.content),
       message.epoch,
       BigInt(message.rlnIdentifier),
     ],
   };
 
-  const status = await RLN.verifyProof(verifierKey, proof);
+  const status = await Rln.verifyProof(verifierKey, proof);
 
   if (!status) {
     return MessageVerificationStatus.INVALID;
